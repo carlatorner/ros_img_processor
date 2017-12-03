@@ -105,13 +105,13 @@ void RosImgProcessorNode::publish()
 	    cv_img_out_.encoding = img_encoding_;
 	    image_pub_.publish(cv_img_out_.toImageMsg());
 
-	//center raydirection
+	//direction raydirection
 	geometry_msgs::Vector3 direction;
 	direction.header.frame_id = "raydirection";
 	direction.x = raydirection.at<double>(0,0);
 	direction.y = raydirection.at<double>(1,0);
 	direction.y = raydirection.at<double>(2,0);
-	raydirection_circle_pun.publish(direction);
+	raydirection_circle_pub_.publish(direction);
 	}
 }
 
