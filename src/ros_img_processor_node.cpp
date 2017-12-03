@@ -1,5 +1,16 @@
 #include "ros_img_processor_node.h"
 
+//constants
+const int GAUSSIAN_BLUR_SIZE = 7;
+const double GAUSSIAN_BLUR_SIGMA = 2; 
+const double CANNY_EDGE_TH = 150;
+const double HOUGH_ACCUM_RESOLUTION = 2;
+const double MIN_CIRCLE_DIST = 40;
+const double HOUGH_ACCUM_TH = 70;
+const int MIN_RADIUS = 20;
+const int MAX_RADIUS = 100;
+
+
 RosImgProcessorNode::RosImgProcessorNode() :
     nh_(ros::this_node::getName()),
     img_tp_(nh_)
@@ -24,17 +35,52 @@ void RosImgProcessorNode::process()
 {
     cv::Rect_<int> box;
 
+    cv::Mat gray_image;
+    std::vector<cv::Vec3f> circles;
+    cv::Point center;
+    int radius;
+
     //check if new image is there
     if ( cv_img_ptr_in_ != nullptr )
     {
         //copy the input image to the out one
         cv_img_out_.image = cv_img_ptr_in_->image;
 
-		//find the ball
-		//TODO
+		//find the ball (webcam_circles)
 
+		        //clear previous circles
+			circles.clear();
+
+			// If input image is RGB, convert it to gray 
+			cv::cvtColor(image, gray_image, CV_BGR2GRAY);
+
+			//Reduce the noise so we avoid false circle detection
+			cv::GaussianBlur( gray_image, gray_image, cv::Size(GAUSSIAN_BLUR_SIZE, GAUSSIAN_BLUR_SIZE), GAUSSIAN_BLUR_SIGMA );
+
+			//Apply the Hough Transform to find the circles
+			cv::HoughCircles( gray_image, circles, CV_HOUGH_GRADIENT, HOUGH_ACCUM_RESOLUTION, MIN_CIRCLE_DIST, CANNY_EDGE_TH, HOUGH_ACCUM_TH, MIN_RADIUS, MAX_RADIUS );
+		
+			//draw circles on the image      
+			for(unsigned int ii = 0; ii < circles.size(); ii++ )
+			{
+			    if ( circles[ii][0] != -1 )
+			    {
+				    center = cv::Point(cvRound(circles[ii][0]), cvRound(circles[ii][1]));
+				    radius = cvRound(circles[ii][2]);
+				    cv::circle(image, center, 5, cv::Scalar(0,0,255), -1, 8, 0 );// circle center in green
+				    cv::circle(image, center, radius, cv::Scalar(0,0,255), 3, 8, 0 );// circle perimeter in red
+			    }
+} 
 		//find the direction vector
-		//TODO
+		
+			
+			cv::Mat matrixK_inverse;
+			//inverse (cv::invert(cv::InputArray src, cv::OutputArray dst, int method = cv::DECOMP_LU)	
+			double cv::invert(matrixK_, matrixK_inverse, cv::DECOMP_LU);
+		
+			//ray direction ( d = K⁻¹·center)
+			cv::Mat cntr = (cv::Mat_<double>(3,1) <<center.x, center.y, 1.0);			
+			raydirection = matrixK_inverse*cntr;			
 
         //sets and draw a bounding box around the ball
         box.x = (cv_img_ptr_in_->image.cols/2)-10;
@@ -58,6 +104,14 @@ void RosImgProcessorNode::publish()
 	    cv_img_out_.header.frame_id = "camera";
 	    cv_img_out_.encoding = img_encoding_;
 	    image_pub_.publish(cv_img_out_.toImageMsg());
+
+	//center raydirection
+	geometry_msgs::Vector3 direction;
+	direction.header.frame_id = "raydirection";
+	direction.x = raydirection.at<double>(0,0);
+	direction.y = raydirection.at<double>(1,0);
+	direction.y = raydirection.at<double>(2,0);
+	raydirection_circle_pun.publish(direction);
 	}
 }
 
@@ -85,5 +139,11 @@ void RosImgProcessorNode::cameraInfoCallback(const sensor_msgs::CameraInfo & _ms
 	matrixP_ = (cv::Mat_<double>(3,3) << _msg.P[0],_msg.P[1],_msg.P[2],
                                         _msg.P[3],_msg.P[4],_msg.P[5],
                                         _msg.P[6],_msg.P[7],_msg.P[8]);
+
 	//std::cout << matrixP_ << std::endl;
+
+	matrixK_ = (cv::Mat_<double>(3,3) << _msg.K[0],_msg.K[1],_msg.K[2],
+				             _msg.K[3],_msg.K[4],_msg.K[5],
+				             _msg.K[6],_msg.K[7],_msg.K[8]);
+	//std::cout << matrixK_ << std::endl;
 }
